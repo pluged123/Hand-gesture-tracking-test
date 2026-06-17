@@ -1,32 +1,29 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Hand Gesture Tracker</title>
 
 <style>
 body {
     margin: 0;
+    background: black;
     overflow: hidden;
-    background: #111;
-    color: white;
     font-family: Arial, sans-serif;
 }
 
-#video {
+video {
     position: absolute;
     width: 100vw;
     height: 100vh;
     object-fit: cover;
-    transform: scaleX(-1);
 }
 
-#canvas {
+canvas {
     position: absolute;
     width: 100vw;
     height: 100vh;
-    pointer-events: none;
 }
 
 #gesture {
@@ -34,6 +31,162 @@ body {
     top: 20px;
     left: 50%;
     transform: translateX(-50%);
+    font-size: 32px;
+    color: white;
+    background: rgba(0,0,0,0.6);
+    padding: 10px 20px;
+    border-radius: 10px;
+    z-index: 10;
+}
+
+#debug {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    right: 10px;
+    font-size: 12px;
+    color: lime;
+    background: rgba(0,0,0,0.7);
+    padding: 8px;
+    max-height: 120px;
+    overflow: auto;
+    z-index: 10;
+}
+</style>
+</head>
+
+<body>
+
+<div id="gesture">Loading...</div>
+<div id="debug">Starting...</div>
+
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas"></canvas>
+
+<script type="module">
+
+import {
+    HandLandmarker,
+    FilesetResolver
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest";
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+const gestureEl = document.getElementById("gesture");
+const debugEl = document.getElementById("debug");
+
+function log(msg) {
+    debugEl.textContent = msg;
+}
+
+let handLandmarker;
+
+async function init() {
+    try {
+        log("Requesting camera...");
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: { ideal: "environment" }
+            }
+        });
+
+        video.srcObject = stream;
+
+        log("Loading model...");
+
+        const vision = await FilesetResolver.forVisionTasks(
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+        );
+
+        handLandmarker = await HandLandmarker.createFromOptions(
+            vision,
+            {
+                baseOptions: {
+                    modelAssetPath:
+                        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+                },
+                runningMode: "VIDEO",
+                numHands: 2
+            }
+        );
+
+        log("Model loaded");
+
+        video.addEventListener("loadeddata", () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            detect();
+        });
+
+    } catch (err) {
+        log("ERROR: " + err.message);
+    }
+}
+
+function fingerUp(hand, tip, pip) {
+    return hand[tip].y < hand[pip].y;
+}
+
+function detectGesture(hand) {
+    const index = fingerUp(hand, 8, 6);
+    const middle = fingerUp(hand, 12, 10);
+    const ring = fingerUp(hand, 16, 14);
+    const pinky = fingerUp(hand, 20, 18);
+
+    const count = [index, middle, ring, pinky].filter(Boolean).length;
+
+    if (count === 4) return "Open Hand ✋";
+    if (count === 0) return "Fist ✊";
+    if (index && !middle && !ring && !pinky) return "Point ☝️";
+    if (index && middle && !ring && !pinky) return "Peace ✌️";
+
+    return "Unknown";
+}
+
+function detect() {
+    const results = handLandmarker.detectForVideo(
+        video,
+        performance.now()
+    );
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const hands = results.landmarks || [];
+
+    log("Hands detected: " + hands.length);
+
+    if (hands.length > 0) {
+        const hand = hands[0];
+        gestureEl.textContent = detectGesture(hand);
+
+        for (const p of hand) {
+            ctx.beginPath();
+            ctx.arc(
+                p.x * canvas.width,
+                p.y * canvas.height,
+                5,
+                0,
+                Math.PI * 2
+            );
+            ctx.fillStyle = "lime";
+            ctx.fill();
+        }
+    } else {
+        gestureEl.textContent = "Show your hand";
+    }
+
+    requestAnimationFrame(detect);
+}
+
+init();
+
+</script>
+
+</body>
+</html>
     font-size: 3rem;
     font-weight: bold;
     background: rgba(0,0,0,0.7);
