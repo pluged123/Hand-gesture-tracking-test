@@ -63,7 +63,9 @@ const ctx = canvas.getContext("2d");
 const gestureText = document.getElementById("gesture");
 
 const stream = await navigator.mediaDevices.getUserMedia({
-    video: true
+    video: {
+        facingMode: "environment"
+    }
 });
 
 video.srcObject = stream;
