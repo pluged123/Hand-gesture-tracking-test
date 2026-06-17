@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hand Gesture Tracker</title>
+
+<style>
+body {
+    margin: 0;
+    overflow: hidden;
+    background: #111;
+    color: white;
+    font-family: Arial, sans-serif;
+}
+
+#video {
+    position: absolute;
+    width: 100vw;
+    height: 100vh;
+    object-fit: cover;
+    transform: scaleX(-1);
+}
+
+#canvas {
+    position: absolute;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+}
+
+#gesture {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 3rem;
+    font-weight: bold;
+    background: rgba(0,0,0,0.7);
+    padding: 15px 30px;
+    border-radius: 12px;
+    z-index: 10;
+}
+</style>
+</head>
+
+<body>
+
+<div id="gesture">Waiting for hand...</div>
+
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas"></canvas>
+
+<script type="module">
+import {
+    HandLandmarker,
+    FilesetResolver
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const gestureText = document.getElementById("gesture");
+
+const stream = await navigator.mediaDevices.getUserMedia({
+    video: true
+});
+
+video.srcObject = stream;
+
+const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+);
+
+const handLandmarker = await HandLandmarker.createFromOptions(
+    vision,
+    {
+        baseOptions: {
+            modelAssetPath:
+            "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+        },
+        runningMode: "VIDEO",
+        numHands: 2
+    }
+);
+
+function fingerUp(hand, tip, pip) {
+    return hand[tip].y < hand[pip].y;
+}
+
+function detectGesture(hand) {
+    const thumbUp = hand[4].x > hand[3].x;
+
+    const indexUp = fingerUp(hand, 8, 6);
+    const middleUp = fingerUp(hand, 12, 10);
+    const ringUp = fingerUp(hand, 16, 14);
+    const pinkyUp = fingerUp(hand, 20, 18);
+
+    const count =
+        (indexUp ? 1 : 0) +
+        (middleUp ? 1 : 0) +
+        (ringUp ? 1 : 0) +
+        (pinkyUp ? 1 : 0);
+
+    if (count === 4)
+        return "✋ Open Hand";
+
+    if (count === 0)
+        return "✊ Fist";
+
+    if (indexUp && !middleUp && !ringUp && !pinkyUp)
+        return "☝️ Pointing";
+
+    if (indexUp && middleUp && !ringUp && !pinkyUp)
+        return "✌️ Peace Sign";
+
+    if (thumbUp && !indexUp && !middleUp && !ringUp && !pinkyUp)
+        return "👍 Thumbs Up";
+
+    return "❓ Unknown Gesture";
+}
+
+video.addEventListener("loadeddata", () => {
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    function render() {
+
+        const results = handLandmarker.detectForVideo(
+            video,
+            performance.now()
+        );
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (results.landmarks.length > 0) {
+
+            const hand = results.landmarks[0];
+
+            gestureText.textContent = detectGesture(hand);
+
+            for (const point of hand) {
+                ctx.beginPath();
+                ctx.arc(
+                    point.x * canvas.width,
+                    point.y * canvas.height,
+                    5,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fillStyle = "lime";
+                ctx.fill();
+            }
+        } else {
+            gestureText.textContent = "Waiting for hand...";
+        }
+
+        requestAnimationFrame(render);
+    }
+
+    render();
+});
+</script>
+
+</body>
+</html>
